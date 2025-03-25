@@ -14,16 +14,19 @@ else
 fi
 
 echo "Starting Kafka..."
+rm -rf /tmp/kafka-logs  # optionally clear stale state
 /opt/homebrew/bin/kafka-server-start /opt/homebrew/etc/kafka/server.properties > /tmp/kafka.log 2>&1 &
 KAFKA_PID=$!
 
-# Wait up to 30 seconds for Kafka to start
+# Wait and dump logs if it fails
 echo "Waiting for Kafka to start..."
-TIMEOUT=30
+TIMEOUT=10
 STARTED=0
 for ((i=0; i<$TIMEOUT; i++)); do
+  echo -n "."
   if grep -q "KafkaServer.*started" /tmp/kafka.log; then
     STARTED=1
+    echo
     break
   fi
   sleep 1
@@ -33,9 +36,10 @@ if [ "$STARTED" -eq 1 ]; then
   echo $KAFKA_PID > /tmp/kafka.pid
   echo "Kafka started with PID $KAFKA_PID"
 else
-  echo "Kafka failed to start within timeout. Killing process..."
+  echo
+  echo "Kafka failed to start. Here's the last few log lines:"
+  tail -n 30 /tmp/kafka.log
   kill $KAFKA_PID 2>/dev/null
   exit 1
 fi
-
 

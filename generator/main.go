@@ -54,7 +54,7 @@ func main() {
 		var wg sync.WaitGroup
 
 		// Launch data generation concurrently.
-		for i := range 10 {
+		for i := range 1000 {
 			wg.Add(1)
 			go weather.GenerateWeatherData(i, c, &wg)
 			wg.Add(1)
@@ -66,7 +66,7 @@ func main() {
 		}()
 
 		// Buffer for batching messages.
-		batchSize := 5
+		batchSize := 50
 		batch := make([]kafka.Message, 0, batchSize)
 
 		// Process and batch messages.
@@ -105,4 +105,3 @@ func main() {
 		}
 	}
 }
-
