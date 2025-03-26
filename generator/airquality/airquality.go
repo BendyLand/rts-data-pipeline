@@ -53,15 +53,6 @@ func generateAirQualityLocation() map[string]float64 {
 	return result
 }
 
-func checkForEmptyValues(data AirQualityData) bool {
-	for k, v := range data.Readings {
-		if len(k) == 0 || v == nil {
-			return true
-		}
-	}
-	return false
-}
-
 func generateAirQualityDataStatus(data AirQualityData) string {
 	var result string
 	moderates := 0
@@ -114,12 +105,24 @@ func generateAirQualityDataStatus(data AirQualityData) string {
 	default:
 		result = "SAFE"
 	}
+	if checkForEmptyValues(data) {
+		result = "ERROR"
+	}
 	return result
+}
+
+func checkForEmptyValues(data AirQualityData) bool {
+	for k, v := range data.Readings {
+		if len(k) == 0 || v == nil {
+			return true
+		}
+	}
+	return false
 }
 
 func generateAirQualityDataStruct(current int) AirQualityData {
 	var result AirQualityData
-	result.Timestamp = utils.GenerateTimestamp()
+	result.Timestamp = utils.GenerateTimestamp(utils.AirQuality, 0, current)
 	result.SensorId = generateAirQualityId(current)
 	result.SensorType = "air_quality"
 	result.Readings = generateAirQualityReadings()
@@ -143,7 +146,7 @@ func GenerateAirQualityData(current int, c chan string, wg *sync.WaitGroup) {
 Air quality template:
 {
   "timestamp": "2025-03-21T10:00:00Z",
-  "sensor_id": "air_001",
+  "sensor_id": "air_quality_001",
   "sensor_type": "air_quality",
   "readings": {
     "PM2_5": 12.3,

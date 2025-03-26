@@ -115,12 +115,16 @@ func generateAirQualityDataStatus(data AirQualityData) string {
 	default:
 		result = "SAFE"
 	}
+	if !utils.ValidateTimestamp(data.Timestamp) {
+		result = "ERROR"
+	}
 	return result
 }
 
 func generateAirQualityDataStruct(current int) AirQualityData {
 	var result AirQualityData
-	result.Timestamp = utils.GenerateTimestamp()
+	result.Timestamp = utils.GenerateTimestamp(utils.AirQuality, 0, current)
+	fmt.Println(result.Timestamp)
 	result.SensorId = generateAirQualityId(current)
 	result.SensorType = "air_quality"
 	result.Readings = generateAirQualityReadings()
@@ -144,7 +148,7 @@ func GenerateAirQualityData(current int, c chan string, wg *sync.WaitGroup) {
 Air quality template:
 {
   "timestamp": "2025-03-21T10:00:00Z",
-  "sensor_id": "air_001",
+  "sensor_id": "air_quality_001",
   "sensor_type": "air_quality",
   "readings": {
     "PM2_5": 12.3,
@@ -276,7 +280,17 @@ package utils
 import (
 	"math"
 	"math/rand"
+	"time"
+	"slices"
+	"strings"
 	"fmt"
+)
+
+type Option int
+
+const (
+	Weather Option = iota
+	AirQuality
 )
 
 func TruncateFloat(val float64, decimals int) float64 {
@@ -284,7 +298,7 @@ func TruncateFloat(val float64, decimals int) float64 {
 	return math.Trunc(val*factor) / factor
 }
 
-func GenerateTimestamp() string {
+func generateWeatherTimestamp(current int) string {
 	yearMax := 2050
 	yearMin := 1900
 	year := rand.Intn(yearMax-yearMin+1) + yearMin
@@ -295,6 +309,44 @@ func GenerateTimestamp() string {
 	second := rand.Intn(58) + 1
 	result := fmt.Sprintf("%d-%02d-%02dT%02d:%02d:%02dZ", year, month, day, hour, minute, second)
 	return result
+}
+
+// GenerateTimestamp takes the current sequential index and returns a sequential timestamp.
+func generateAirQualityTimestamp(current int) string {
+	// Define a fixed starting point (hardcoded for reproducibility)
+	baseTime := time.Date(2020, time.January, 1, 0, 0, 0, 0, time.UTC)
+	// Increment the base time by 'current' seconds (adjust the multiplier if needed)
+	newTime := baseTime.Add(time.Duration(current) * time.Second)
+	fmt.Println(newTime)
+	// Format the timestamp in ISO8601 format (RFC3339)
+	return newTime.Format(time.RFC3339)
+}
+
+func GenerateTimestamp(op Option, curWeather int, curAirQuality int) string {
+	switch op {
+	case Weather:
+		return generateWeatherTimestamp(curWeather)
+	case AirQuality:
+		return generateAirQualityTimestamp(curAirQuality)
+	}
+	return ""
+}
+
+func ValidateTimestamp(timestamp string) bool {
+	temp := strings.Split(timestamp, "T")
+	date := temp[0]
+	temp = strings.Split(date, "-")
+	month, day := temp[1], temp[2]
+
+	short := []string{"02", "04", "06", "09", "11"}
+
+	if month == "02" && strings.HasPrefix(day, "3") {
+		return false
+	}
+	if day == "31" && slices.Contains(short, month) {
+		return false
+	}
+	return true
 }
 
 // weather.go
@@ -374,7 +426,7 @@ func generateWeatherDataStatus(data WeatherData) string {
 			result = "WARNING"
 		}
 	}
-	if checkForEmptyValues(data) {
+	if checkForEmptyValues(data) || !utils.ValidateTimestamp(data.Timestamp) {
 		result = "ERROR"
 	}
 	if len(result) == 0 {
@@ -385,7 +437,7 @@ func generateWeatherDataStatus(data WeatherData) string {
 
 func generateWeatherDataStruct(current int) WeatherData {
 	var result WeatherData
-	result.Timestamp = utils.GenerateTimestamp()
+	result.Timestamp = utils.GenerateTimestamp(utils.Weather, current, 0)
 	result.SensorId = generateWeatherId(current)
 	result.SensorType = "weather"
 	result.Readings = generateWeatherReadings()

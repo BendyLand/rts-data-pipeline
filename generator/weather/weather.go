@@ -85,7 +85,7 @@ func generateWeatherDataStatus(data WeatherData) string {
 
 func generateWeatherDataStruct(current int) WeatherData {
 	var result WeatherData
-	result.Timestamp = utils.GenerateTimestamp()
+	result.Timestamp = utils.GenerateTimestamp(utils.Weather, current, 0)
 	result.SensorId = generateWeatherId(current)
 	result.SensorType = "weather"
 	result.Readings = generateWeatherReadings()

@@ -41,12 +41,7 @@ stop_process() {
 
 stop_process /tmp/kafka.pid "Kafka"
 stop_process /tmp/zookeeper.pid "ZooKeeper"
+if [ -f "/tmp/kafka-consumer.pid" ]; then 
+  stop_process /tmp/kafka-consumer.pid "Consumer"
+fi
 
-
-# echo "Stopping Kafka..."
-# kill $(cat /tmp/kafka.pid) 2>/dev/null && echo "Kafka stopped." || echo "Kafka not running?"
-
-# echo "Stopping ZooKeeper..."
-# kill $(cat /tmp/zookeeper.pid) 2>/dev/null && echo "ZooKeeper stopped." || echo "ZooKeeper not running?"
-
-# rm -f /tmp/kafka.pid /tmp/zookeeper.pid
