@@ -40,16 +40,11 @@ func generateAirQualityReadings() map[string]any {
 
 func generateAirQualityLocation() map[string]float64 {
 	result := make(map[string]float64)
-	latitude := utils.TruncateFloat(rand.Float64()*90, 4)
-	longitude := utils.TruncateFloat(rand.Float64()*180, 4)
-	if rand.Float64() < 0.5 {
-		latitude = -latitude
-	}
-	if rand.Float64() < 0.5 {
-		longitude = -longitude
-	}
-	result["latitude"] = latitude
-	result["longitude"] = longitude
+	latitudes := []float64{59.1674, 31.9381, -44.2196, 36.3214}
+	longitudes := []float64{-74.6660, -6.0664, 170.3022, 139.5357}
+	choice := rand.Intn(4)
+	result["latitude"] = latitudes[choice]
+	result["longitude"] = longitudes[choice]
 	return result
 }
 
