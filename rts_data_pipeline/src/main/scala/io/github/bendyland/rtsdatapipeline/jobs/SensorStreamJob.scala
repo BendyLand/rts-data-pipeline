@@ -9,7 +9,6 @@ object SensorStreamJob {
   def run(spark: SparkSession): Unit = {
     spark.sparkContext.setLogLevel("WARN")
     import spark.implicits._
-
     val kafkaDF = spark.readStream
       .format("kafka")
       .option("kafka.bootstrap.servers", "localhost:9092")
