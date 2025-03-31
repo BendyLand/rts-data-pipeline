@@ -1,0 +1,187 @@
+- Main.scala
+package io.github.bendyland.rtsdatapipeline
+
+import io.github.bendyland.rtsdatapipeline.utils.SparkSessionFactory
+import io.github.bendyland.rtsdatapipeline.jobs.SensorStreamJob
+
+object Main extends App {
+  val spark = SparkSessionFactory.create("KafkaConsumerApp")
+  SensorStreamJob.run(spark)
+}
+
+- SensorStreamJob.scala
+package io.github.bendyland.rtsdatapipeline.jobs
+
+import org.apache.spark.sql.{SparkSession, DataFrame}
+import io.github.bendyland.rtsdatapipeline.transformations.SensorDataTransformations
+import io.github.bendyland.rtsdatapipeline.sinks.ConsoleWriter
+import io.github.bendyland.rtsdatapipeline.messageparser.SensorData
+
+object SensorStreamJob {
+  def run(spark: SparkSession): Unit = {
+    spark.sparkContext.setLogLevel("WARN")
+    import spark.implicits._
+    val kafkaDF = spark.readStream
+      .format("kafka")
+      .option("kafka.bootstrap.servers", "localhost:9092")
+      .option("subscribe", "sensor-data")
+      .option("startingOffsets", "earliest")
+      .load()
+
+    val messagesDS = kafkaDF.selectExpr("CAST(value AS STRING) as message").as[String]
+    val sensorDataDS = SensorDataTransformations.parseSensorData(messagesDS)(spark)
+    val enrichedDF = SensorDataTransformations.enrichSensorData(sensorDataDS)(spark)
+
+    // Get the final aggregated DataFrame from our transformation function
+    val finalDF = SensorDataTransformations.preJoinAndAggregate(enrichedDF)(spark)
+
+    // Start the streaming query on the final DataFrame
+    val query = finalDF.writeStream
+      .outputMode("append")
+      .format("console")
+      .start()
+
+    query.awaitTermination()
+  }
+}
+
+- MessageParser.scala
+package io.github.bendyland.rtsdatapipeline.messageparser
+
+import io.circe._, io.circe.parser._
+import io.circe.generic.auto._
+
+case class SensorData(
+  Timestamp: String,
+  SensorId: String,
+  SensorType: String,
+  Readings: Map[String, Double],
+  Location: Map[String, Double],
+  Status: String
+)
+
+object MessageParser {
+  // Returns None if parsing failed
+  def parseSensorData(jsonString: String): Option[SensorData] = {
+    parse(jsonString).flatMap(_.as[SensorData]).toOption
+  }
+}
+
+- ConsoleWriter.scala
+package io.github.bendyland.rtsdatapipeline.sinks
+
+import org.apache.spark.sql.Dataset
+import org.apache.spark.sql.streaming.StreamingQuery
+
+object ConsoleWriter {
+  def write(ds: Dataset[_], outputMode: String): StreamingQuery = {
+    ds.writeStream
+      .outputMode(outputMode)
+      .format("console")
+      .start()
+  }
+}
+
+- SensorDataTransformations.scala
+package io.github.bendyland.rtsdatapipeline.transformations
+
+import org.apache.spark.sql.{Dataset, DataFrame, SparkSession}
+import org.apache.spark.sql.functions._
+import io.github.bendyland.rtsdatapipeline.messageparser.{SensorData, MessageParser}
+
+object SensorDataTransformations {
+  // Parse raw JSON strings into SensorData objects.
+  def parseSensorData(jsonDS: Dataset[String])(implicit spark: SparkSession): Dataset[SensorData] = {
+    import spark.implicits._
+    jsonDS.flatMap(MessageParser.parseSensorData)
+  }
+
+  def preJoinAndAggregate(enrichedDF: DataFrame)(implicit spark: SparkSession): DataFrame = {
+    import spark.implicits._
+    // Prepare the air quality stream, selecting and renaming columns explicitly:
+    val aqStream = enrichedDF
+      .filter($"SensorType" === "air_quality" && $"timestamp".isNotNull)
+      .withWatermark("timestamp", "2 minutes")
+      .withColumn("window", window($"timestamp", "1 minute"))
+      .select(
+        $"window",
+        $"SensorId".as("aq_SensorId"),
+        $"CO".as("aq_CO") 
+      )
+      .alias("aq")
+
+    // Prepare the weather stream similarly:
+    val wStream = enrichedDF
+      .filter($"SensorType" === "weather" && $"timestamp".isNotNull)
+      .withWatermark("timestamp", "2 minutes")
+      .withColumn("window", window($"timestamp", "1 minute"))
+      .select(
+        $"window",
+        $"SensorId".as("w_SensorId"),
+        $"temperature".as("w_temperature") 
+      )
+      .alias("w")
+
+    // Join on the common "window" column:
+    val joinedDF = aqStream.join(wStream, Seq("window"))
+
+    // Now perform aggregations using the disambiguated column names:
+    joinedDF.groupBy($"window")
+      .agg(
+        avg($"aq_CO").as("avg_CO"),           
+        avg($"w_temperature").as("avg_temperature") 
+      )
+  }
+
+  // Enrich the parsed SensorData by converting the timestamp string and extracting fields from the maps.
+  def enrichSensorData(sensorDS: Dataset[SensorData])(implicit spark: SparkSession): DataFrame = {
+    val weatherDS = sensorDS.filter(_.SensorType == "weather")
+    val airQualityDS = sensorDS.filter(_.SensorType == "air_quality")
+
+    val weatherDF = this.enrichWeatherSensorData(weatherDS)
+    val airQualityDF = this.enrichAirQualitySensorData(airQualityDS)
+
+    weatherDF.unionByName(airQualityDF)
+  }
+
+  def enrichWeatherSensorData(sensorDS: Dataset[SensorData])(implicit spark: SparkSession): DataFrame = {
+    import spark.implicits._
+    sensorDS.toDF()
+      // Convert the timestamp string into a proper timestamp
+      .withColumn("timestamp", to_timestamp($"Timestamp", "yyyy-MM-dd'T'HH:mm:ssX"))
+      // Extract and cast weather readings
+      .withColumn("temperature", $"Readings".getItem("temperature").cast("double"))
+      .withColumn("humidity", $"Readings".getItem("humidity").cast("int"))
+      .withColumn("wind_speed", $"Readings".getItem("wind_speed").cast("double"))
+      // Extract location coordinates 
+      .withColumn("latitude", $"Location".getItem("latitude").cast("double"))
+      .withColumn("longitude", $"Location".getItem("longitude").cast("double"))
+  }
+
+  def enrichAirQualitySensorData(sensorDS: Dataset[SensorData])(implicit spark: SparkSession): DataFrame = {
+    import spark.implicits._
+    sensorDS.toDF()
+      .withColumn("timestamp", to_timestamp($"Timestamp", "yyyy-MM-dd'T'HH:mm:ssX"))
+      .withColumn("CO", $"Readings".getItem("CO").cast("int"))
+      .withColumn("NO2", $"Readings".getItem("NO2").cast("int"))
+      .withColumn("PM10", $"Readings".getItem("PM10").cast("int"))
+      .withColumn("PM2_5", $"Readings".getItem("PM2_5").cast("int"))
+      .withColumn("ozone", $"Readings".getItem("ozone").cast("int"))
+      .withColumn("latitude", $"Location".getItem("latitude").cast("double"))
+      .withColumn("longitude", $"Location".getItem("longitude").cast("double"))
+  }
+}
+
+- SparkSessionFactory.scala
+package io.github.bendyland.rtsdatapipeline.utils
+
+import org.apache.spark.sql.SparkSession
+
+object SparkSessionFactory {
+  def create(appName: String): SparkSession = {
+    SparkSession.builder()
+      .appName(appName)
+      .master("local[*]")
+      .getOrCreate()
+  }
+}

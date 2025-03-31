@@ -2,8 +2,6 @@ package weather
 
 import (
 	"fmt"
-	"encoding/json"
-	"sync"
 	"math/rand"
 	"generator/utils"
 )
@@ -78,26 +76,16 @@ func generateWeatherDataStatus(data WeatherData) string {
 	return result
 }
 
-func generateWeatherDataStruct(current int) WeatherData {
-	var result WeatherData
-	result.Timestamp = utils.GenerateTimestamp(utils.Weather, current, 0)
-	result.SensorId = generateWeatherId(current)
-	result.SensorType = "weather"
-	result.Readings = generateWeatherReadings()
-	result.Location = generateWeatherLocation()
+func GenerateWeatherDataStruct(current int, offset int) WeatherData {
+	result := WeatherData{
+		Timestamp:  utils.GenerateTimestamp(utils.Weather, current, 0, offset),
+		SensorId:   generateWeatherId(current),
+		SensorType: "weather",
+		Readings:   generateWeatherReadings(),
+		Location:   generateWeatherLocation(),
+	}
 	result.Status = generateWeatherDataStatus(result)
 	return result
-}
-
-func GenerateWeatherData(current int, c chan string, wg *sync.WaitGroup) {
-	defer wg.Done()
-	data := generateWeatherDataStruct(current)
-	result, err := json.Marshal(data)
-	if err != nil {
-		fmt.Println("Unable to marshal json data for weather.")
-		return 
-	}
-	c <- string(result)
 }
 
 /*

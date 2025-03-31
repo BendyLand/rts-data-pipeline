@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"strings"
 	"fmt"
 	"math/rand"
 	"os"
 	"os/signal"
+	"encoding/json"
 	"sync"
 	"syscall"
 	"time"
@@ -50,27 +52,72 @@ func main() {
 		default:
 		}
 
-		c := make(chan string)
 		var wg sync.WaitGroup
 
 		// Launch data generation concurrently.
+		weatherData := make([]string, 0, 1000)
+		airData := make([]string, 0, 1000)
+
+		var muWeather sync.Mutex
+		var muAirQuality sync.Mutex
+
 		for i := range 1000 {
-			wg.Add(1)
-			go weather.GenerateWeatherData(i, c, &wg)
-			wg.Add(1)
-			go airquality.GenerateAirQualityData(i, c, &wg)
+			offset := rand.Intn(21) + 10
+			wg.Add(2)
+			go func(i int, o int) {
+				defer wg.Done()
+				data := weather.GenerateWeatherDataStruct(i, offset)
+				jsonData, err := json.Marshal(data)
+				if err != nil {
+					fmt.Println("Failed to marshal weather data:", err)
+					return
+				}
+				muWeather.Lock()
+				weatherData = append(weatherData, string(jsonData))
+				muWeather.Unlock()
+			}(i, offset)
+			go func(i int, o int) {
+				defer wg.Done()
+				data := airquality.GenerateAirQualityDataStruct(i, offset)
+				jsonData, err := json.Marshal(data)
+				if err != nil {
+					fmt.Println("Failed to marshal air quality data:", err)
+					return
+				}
+				muAirQuality.Lock()
+				airData = append(airData, string(jsonData))
+				muAirQuality.Unlock()
+			}(i, offset)
 		}
-		go func() {
-			wg.Wait()
-			close(c)
-		}()
+		wg.Wait()
+
+		// Interleave the data in randomized 1:1 order
+		interleaved := make([]string, 0, 2000)
+		for i := range 1000 {
+			if rand.Intn(2) == 0 {
+				interleaved = append(interleaved, weatherData[i], airData[i])
+			} else {
+				interleaved = append(interleaved, airData[i], weatherData[i])
+			}
+		}
+
+		weatherCount := 0
+		airCount := 0
+		for _, entry := range interleaved {
+			if strings.Contains(entry, `"SensorType":"weather"`) {
+				weatherCount++
+			} else if strings.Contains(entry, `"SensorType":"air_quality"`) {
+				airCount++
+			}
+		}
+		fmt.Printf("Batch sensor distribution: Weather=%d, Air Quality=%d\n", weatherCount, airCount)
 
 		// Buffer for batching messages.
 		batchSize := 50
 		batch := make([]kafka.Message, 0, batchSize)
 
 		// Process and batch messages.
-		for entry := range c {
+		for _, entry := range interleaved {
 			msg := kafka.Message{
 				Key:   []byte("sensor-key"),
 				Value: []byte(entry),

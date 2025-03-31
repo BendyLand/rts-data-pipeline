@@ -2,7 +2,6 @@ package utils
 
 import (
 	"math"
-	"math/rand"
 	"time"
 )
 
@@ -18,30 +17,27 @@ func TruncateFloat(val float64, decimals int) float64 {
 	return math.Trunc(val*factor) / factor
 }
 
-func generateWeatherTimestamp(current int) string {
+func generateWeatherTimestamp(current int, offset int) string {
 	// Define a fixed starting point (hardcoded for reproducibility)
 	baseTime := time.Date(2020, time.January, 1, 0, 0, 0, 0, time.UTC)
-	// Generate 10 - 30 second offset for slight randomness in data
-	offset := rand.Intn(21) + 10
 	// Increment the base time by 'current' seconds (adjust the multiplier if needed)
 	newTime := baseTime.Add(time.Duration(current+offset) * time.Second)
 	// Format the timestamp in ISO8601 format (RFC3339)
 	return newTime.Format(time.RFC3339)
 }
 
-func generateAirQualityTimestamp(current int) string {
+func generateAirQualityTimestamp(current int, offset int) string {
 	baseTime := time.Date(2020, time.January, 1, 0, 0, 0, 0, time.UTC)
-	offset := rand.Intn(21) + 10
 	newTime := baseTime.Add(time.Duration(current+offset) * time.Second)
 	return newTime.Format(time.RFC3339)
 }
 
-func GenerateTimestamp(op Option, curWeather int, curAirQuality int) string {
+func GenerateTimestamp(op Option, curWeather int, curAirQuality int, offset int) string {
 	switch op {
 	case Weather:
-		return generateWeatherTimestamp(curWeather)
+		return generateWeatherTimestamp(curWeather, offset)
 	case AirQuality:
-		return generateAirQualityTimestamp(curAirQuality)
+		return generateAirQualityTimestamp(curAirQuality, offset)
 	}
 	return ""
 }

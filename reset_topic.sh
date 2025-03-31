@@ -4,7 +4,6 @@ TOPIC="sensor-data"
 BROKER="localhost:9092"
 
 /opt/homebrew/bin/kafka-topics --bootstrap-server $BROKER --delete --topic $TOPIC
-# /opt/homebrew/bin/kafka-topics --bootstrap-server localhost:9092 --delete --topic sensor-data
 
 # Wait for deletion to complete
 echo "Waiting for topic '$TOPIC' to be fully deleted..."
@@ -17,7 +16,9 @@ echo "Recreating topic '$TOPIC'..."
 /opt/homebrew/bin/kafka-topics --bootstrap-server $BROKER \
   --create --topic $TOPIC --partitions 1 --replication-factor 1
 
+echo "Removing Spark checkpoint..."
+rm -rf /tmp/sensor-type-check
+
 echo "Clearing old consumer logs..."
 echo "" > /tmp/kafka-consumer.log
 
-  

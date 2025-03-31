@@ -2,8 +2,6 @@ package airquality
 
 import (
 	"fmt"
-	"encoding/json"
-	"sync"
 	"generator/utils"
 	"math/rand"
 )
@@ -115,26 +113,16 @@ func checkForEmptyValues(data AirQualityData) bool {
 	return false
 }
 
-func generateAirQualityDataStruct(current int) AirQualityData {
-	var result AirQualityData
-	result.Timestamp = utils.GenerateTimestamp(utils.AirQuality, 0, current)
-	result.SensorId = generateAirQualityId(current)
-	result.SensorType = "air_quality"
-	result.Readings = generateAirQualityReadings()
-	result.Location = generateAirQualityLocation()
+func GenerateAirQualityDataStruct(current int, offset int) AirQualityData {
+	result := AirQualityData{
+		Timestamp:  utils.GenerateTimestamp(utils.AirQuality, 0, current, offset),
+		SensorId:   generateAirQualityId(current),
+		SensorType: "air_quality",
+		Readings:   generateAirQualityReadings(),
+		Location:   generateAirQualityLocation(),
+	}
 	result.Status = generateAirQualityDataStatus(result)
 	return result
-}
-
-func GenerateAirQualityData(current int, c chan string, wg *sync.WaitGroup) {
-	defer wg.Done()
-	data := generateAirQualityDataStruct(current)
-	result, err := json.Marshal(data)
-	if err != nil {
-		fmt.Println("Unable to marshal json data for air quality.")
-		return 
-	}
-	c <- string(result)
 }
 
 /*
