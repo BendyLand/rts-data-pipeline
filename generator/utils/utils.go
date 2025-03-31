@@ -19,17 +19,17 @@ func TruncateFloat(val float64, decimals int) float64 {
 
 func generateWeatherTimestamp(current int, offset int) string {
 	// Define a fixed starting point (hardcoded for reproducibility)
-	baseTime := time.Date(2020, time.January, 1, 0, 0, 0, 0, time.UTC)
+	baseTime := time.Now()
 	// Increment the base time by 'current' seconds (adjust the multiplier if needed)
-	newTime := baseTime.Add(time.Duration(current+offset) * time.Second)
+	newTime := baseTime.Add(time.Duration(current+offset) * time.Millisecond)
 	// Format the timestamp in ISO8601 format (RFC3339)
-	return newTime.Format(time.RFC3339)
+	return newTime.Format("2006-01-02T15:04:05.000Z")
 }
 
 func generateAirQualityTimestamp(current int, offset int) string {
-	baseTime := time.Date(2020, time.January, 1, 0, 0, 0, 0, time.UTC)
-	newTime := baseTime.Add(time.Duration(current+offset) * time.Second)
-	return newTime.Format(time.RFC3339)
+	baseTime := time.Now()
+	newTime := baseTime.Add(time.Duration(current+offset) * time.Millisecond)
+	return newTime.Format("2006-01-02T15:04:05.000Z")
 }
 
 func GenerateTimestamp(op Option, curWeather int, curAirQuality int, offset int) string {

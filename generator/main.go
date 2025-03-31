@@ -43,6 +43,7 @@ func main() {
 	}()
 
 	// Infinite loop that periodically generates data.
+	// outerOffset := 10
 	for {
 		// Check for cancellation before starting an iteration.
 		select {
@@ -62,7 +63,7 @@ func main() {
 		var muAirQuality sync.Mutex
 
 		for i := range 1000 {
-			offset := rand.Intn(21) + 10
+			offset := rand.Intn(21) + 10 // + outerOffset
 			wg.Add(2)
 			go func(i int, o int) {
 				defer wg.Done()
@@ -150,5 +151,6 @@ func main() {
 			return
 		case <-time.After(time.Second * time.Duration(delay)):
 		}
+		// outerOffset += rand.Intn(10) + 1
 	}
 }

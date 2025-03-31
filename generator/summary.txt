@@ -3,8 +3,6 @@ package airquality
 
 import (
 	"fmt"
-	"encoding/json"
-	"sync"
 	"generator/utils"
 	"math/rand"
 )
@@ -41,26 +39,12 @@ func generateAirQualityReadings() map[string]any {
 
 func generateAirQualityLocation() map[string]float64 {
 	result := make(map[string]float64)
-	latitude := utils.TruncateFloat(rand.Float64()*90, 4)
-	longitude := utils.TruncateFloat(rand.Float64()*180, 4)
-	if rand.Float64() < 0.5 {
-		latitude = -latitude
-	}
-	if rand.Float64() < 0.5 {
-		longitude = -longitude
-	}
-	result["latitude"] = latitude
-	result["longitude"] = longitude
+	latitudes := []float64{59.1674, 31.9381, -44.2196, 36.3214}
+	longitudes := []float64{-74.6660, -6.0664, 170.3022, 139.5357}
+	choice := rand.Intn(4)
+	result["latitude"] = latitudes[choice]
+	result["longitude"] = longitudes[choice]
 	return result
-}
-
-func checkForEmptyValues(data AirQualityData) bool {
-	for k, v := range data.Readings {
-		if len(k) == 0 || v == nil {
-			return true
-		}
-	}
-	return false
 }
 
 func generateAirQualityDataStatus(data AirQualityData) string {
@@ -115,33 +99,31 @@ func generateAirQualityDataStatus(data AirQualityData) string {
 	default:
 		result = "SAFE"
 	}
-	if !utils.ValidateTimestamp(data.Timestamp) {
+	if checkForEmptyValues(data) {
 		result = "ERROR"
 	}
 	return result
 }
 
-func generateAirQualityDataStruct(current int) AirQualityData {
-	var result AirQualityData
-	result.Timestamp = utils.GenerateTimestamp(utils.AirQuality, 0, current)
-	fmt.Println(result.Timestamp)
-	result.SensorId = generateAirQualityId(current)
-	result.SensorType = "air_quality"
-	result.Readings = generateAirQualityReadings()
-	result.Location = generateAirQualityLocation()
-	result.Status = generateAirQualityDataStatus(result)
-	return result
+func checkForEmptyValues(data AirQualityData) bool {
+	for k, v := range data.Readings {
+		if len(k) == 0 || v == nil {
+			return true
+		}
+	}
+	return false
 }
 
-func GenerateAirQualityData(current int, c chan string, wg *sync.WaitGroup) {
-	defer wg.Done()
-	data := generateAirQualityDataStruct(current)
-	result, err := json.Marshal(data)
-	if err != nil {
-		fmt.Println("Unable to marshal json data for air quality.")
-		return 
+func GenerateAirQualityDataStruct(current int, offset int) AirQualityData {
+	result := AirQualityData{
+		Timestamp:  utils.GenerateTimestamp(utils.AirQuality, 0, current, offset),
+		SensorId:   generateAirQualityId(current),
+		SensorType: "air_quality",
+		Readings:   generateAirQualityReadings(),
+		Location:   generateAirQualityLocation(),
 	}
-	c <- string(result)
+	result.Status = generateAirQualityDataStatus(result)
+	return result
 }
 
 /*
@@ -170,10 +152,12 @@ package main
 
 import (
 	"context"
+	"strings"
 	"fmt"
 	"math/rand"
 	"os"
 	"os/signal"
+	"encoding/json"
 	"sync"
 	"syscall"
 	"time"
@@ -218,27 +202,72 @@ func main() {
 		default:
 		}
 
-		c := make(chan string)
 		var wg sync.WaitGroup
 
 		// Launch data generation concurrently.
+		weatherData := make([]string, 0, 1000)
+		airData := make([]string, 0, 1000)
+
+		var muWeather sync.Mutex
+		var muAirQuality sync.Mutex
+
 		for i := range 1000 {
-			wg.Add(1)
-			go weather.GenerateWeatherData(i, c, &wg)
-			wg.Add(1)
-			go airquality.GenerateAirQualityData(i, c, &wg)
+			offset := rand.Intn(21) + 10
+			wg.Add(2)
+			go func(i int, o int) {
+				defer wg.Done()
+				data := weather.GenerateWeatherDataStruct(i, offset)
+				jsonData, err := json.Marshal(data)
+				if err != nil {
+					fmt.Println("Failed to marshal weather data:", err)
+					return
+				}
+				muWeather.Lock()
+				weatherData = append(weatherData, string(jsonData))
+				muWeather.Unlock()
+			}(i, offset)
+			go func(i int, o int) {
+				defer wg.Done()
+				data := airquality.GenerateAirQualityDataStruct(i, offset)
+				jsonData, err := json.Marshal(data)
+				if err != nil {
+					fmt.Println("Failed to marshal air quality data:", err)
+					return
+				}
+				muAirQuality.Lock()
+				airData = append(airData, string(jsonData))
+				muAirQuality.Unlock()
+			}(i, offset)
 		}
-		go func() {
-			wg.Wait()
-			close(c)
-		}()
+		wg.Wait()
+
+		// Interleave the data in randomized 1:1 order
+		interleaved := make([]string, 0, 2000)
+		for i := range 1000 {
+			if rand.Intn(2) == 0 {
+				interleaved = append(interleaved, weatherData[i], airData[i])
+			} else {
+				interleaved = append(interleaved, airData[i], weatherData[i])
+			}
+		}
+
+		weatherCount := 0
+		airCount := 0
+		for _, entry := range interleaved {
+			if strings.Contains(entry, `"SensorType":"weather"`) {
+				weatherCount++
+			} else if strings.Contains(entry, `"SensorType":"air_quality"`) {
+				airCount++
+			}
+		}
+		fmt.Printf("Batch sensor distribution: Weather=%d, Air Quality=%d\n", weatherCount, airCount)
 
 		// Buffer for batching messages.
 		batchSize := 50
 		batch := make([]kafka.Message, 0, batchSize)
 
 		// Process and batch messages.
-		for entry := range c {
+		for _, entry := range interleaved {
 			msg := kafka.Message{
 				Key:   []byte("sensor-key"),
 				Value: []byte(entry),
@@ -279,11 +308,7 @@ package utils
 
 import (
 	"math"
-	"math/rand"
 	"time"
-	"slices"
-	"strings"
-	"fmt"
 )
 
 type Option int
@@ -298,55 +323,29 @@ func TruncateFloat(val float64, decimals int) float64 {
 	return math.Trunc(val*factor) / factor
 }
 
-func generateWeatherTimestamp(current int) string {
-	yearMax := 2050
-	yearMin := 1900
-	year := rand.Intn(yearMax-yearMin+1) + yearMin
-	month := rand.Intn(12) + 1
-	day := rand.Intn(30) + 1
-	hour := rand.Intn(11) + 1
-	minute := rand.Intn(58) + 1
-	second := rand.Intn(58) + 1
-	result := fmt.Sprintf("%d-%02d-%02dT%02d:%02d:%02dZ", year, month, day, hour, minute, second)
-	return result
-}
-
-// GenerateTimestamp takes the current sequential index and returns a sequential timestamp.
-func generateAirQualityTimestamp(current int) string {
+func generateWeatherTimestamp(current int, offset int) string {
 	// Define a fixed starting point (hardcoded for reproducibility)
 	baseTime := time.Date(2020, time.January, 1, 0, 0, 0, 0, time.UTC)
 	// Increment the base time by 'current' seconds (adjust the multiplier if needed)
-	newTime := baseTime.Add(time.Duration(current) * time.Second)
-	fmt.Println(newTime)
+	newTime := baseTime.Add(time.Duration(current+offset) * time.Second)
 	// Format the timestamp in ISO8601 format (RFC3339)
 	return newTime.Format(time.RFC3339)
 }
 
-func GenerateTimestamp(op Option, curWeather int, curAirQuality int) string {
-	switch op {
-	case Weather:
-		return generateWeatherTimestamp(curWeather)
-	case AirQuality:
-		return generateAirQualityTimestamp(curAirQuality)
-	}
-	return ""
+func generateAirQualityTimestamp(current int, offset int) string {
+	baseTime := time.Date(2020, time.January, 1, 0, 0, 0, 0, time.UTC)
+	newTime := baseTime.Add(time.Duration(current+offset) * time.Second)
+	return newTime.Format(time.RFC3339)
 }
 
-func ValidateTimestamp(timestamp string) bool {
-	temp := strings.Split(timestamp, "T")
-	date := temp[0]
-	temp = strings.Split(date, "-")
-	month, day := temp[1], temp[2]
-
-	short := []string{"02", "04", "06", "09", "11"}
-
-	if month == "02" && strings.HasPrefix(day, "3") {
-		return false
+func GenerateTimestamp(op Option, curWeather int, curAirQuality int, offset int) string {
+	switch op {
+	case Weather:
+		return generateWeatherTimestamp(curWeather, offset)
+	case AirQuality:
+		return generateAirQualityTimestamp(curAirQuality, offset)
 	}
-	if day == "31" && slices.Contains(short, month) {
-		return false
-	}
-	return true
+	return ""
 }
 
 // weather.go
@@ -354,8 +353,6 @@ package weather
 
 import (
 	"fmt"
-	"encoding/json"
-	"sync"
 	"math/rand"
 	"generator/utils"
 )
@@ -393,16 +390,11 @@ func generateWeatherReadings() map[string]any {
 
 func generateWeatherLocation() map[string]float64 {
 	result := make(map[string]float64)
-	latitude := utils.TruncateFloat(rand.Float64()*90, 4)
-	longitude := utils.TruncateFloat(rand.Float64()*180, 4)
-	if rand.Float64() < 0.5 {
-		latitude = -latitude
-	}
-	if rand.Float64() < 0.5 {
-		longitude = -longitude
-	}
-	result["latitude"] = latitude
-	result["longitude"] = longitude
+	latitudes := []float64{59.1674, 31.9381, -44.2196, 36.3214}
+	longitudes := []float64{-74.6660, -6.0664, 170.3022, 139.5357}
+	choice := rand.Intn(4)
+	result["latitude"] = latitudes[choice]
+	result["longitude"] = longitudes[choice]
 	return result
 }
 
@@ -426,7 +418,7 @@ func generateWeatherDataStatus(data WeatherData) string {
 			result = "WARNING"
 		}
 	}
-	if checkForEmptyValues(data) || !utils.ValidateTimestamp(data.Timestamp) {
+	if checkForEmptyValues(data) {
 		result = "ERROR"
 	}
 	if len(result) == 0 {
@@ -435,26 +427,16 @@ func generateWeatherDataStatus(data WeatherData) string {
 	return result
 }
 
-func generateWeatherDataStruct(current int) WeatherData {
-	var result WeatherData
-	result.Timestamp = utils.GenerateTimestamp(utils.Weather, current, 0)
-	result.SensorId = generateWeatherId(current)
-	result.SensorType = "weather"
-	result.Readings = generateWeatherReadings()
-	result.Location = generateWeatherLocation()
+func GenerateWeatherDataStruct(current int, offset int) WeatherData {
+	result := WeatherData{
+		Timestamp:  utils.GenerateTimestamp(utils.Weather, current, 0, offset),
+		SensorId:   generateWeatherId(current),
+		SensorType: "weather",
+		Readings:   generateWeatherReadings(),
+		Location:   generateWeatherLocation(),
+	}
 	result.Status = generateWeatherDataStatus(result)
 	return result
-}
-
-func GenerateWeatherData(current int, c chan string, wg *sync.WaitGroup) {
-	defer wg.Done()
-	data := generateWeatherDataStruct(current)
-	result, err := json.Marshal(data)
-	if err != nil {
-		fmt.Println("Unable to marshal json data for weather.")
-		return 
-	}
-	c <- string(result)
 }
 
 /*
