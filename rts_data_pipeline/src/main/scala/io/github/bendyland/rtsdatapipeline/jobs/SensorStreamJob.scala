@@ -2,7 +2,7 @@ package io.github.bendyland.rtsdatapipeline.jobs
 
 import org.apache.spark.sql.{SparkSession, DataFrame}
 import io.github.bendyland.rtsdatapipeline.transformations.SensorDataTransformations
-import io.github.bendyland.rtsdatapipeline.sinks.ConsoleWriter
+import io.github.bendyland.rtsdatapipeline.sinks.DataSink
 import io.github.bendyland.rtsdatapipeline.messageparser.SensorData
 
 object SensorStreamJob {
@@ -23,12 +23,12 @@ object SensorStreamJob {
     // Get the final aggregated DataFrame from our transformation function
     val finalDF = SensorDataTransformations.preJoinAndAggregate(enrichedDF)(spark)
 
-    // Start the streaming query on the final DataFrame
-    val query = finalDF.writeStream
-      .outputMode("append")
-      .format("console")
-      .start()
+    // Write enriched data to Parquet
+    // DataSink.writeParquet(enrichedDF, "data/parquet/enriched", "checkpoints/enriched")
+    DataSink.readParquetAndWriteToConsole("data/parquet/enriched")(spark)
 
-    query.awaitTermination()
+    // Write aggregated data to Parquet
+    // DataSink.writeParquetAndAwaitTermination(finalDF, "data/parquet/aggregated", "checkpoints/aggregated")
+    DataSink.readParquetAndWriteToConsole("data/parquet/aggregated")(spark)
   }
 }
