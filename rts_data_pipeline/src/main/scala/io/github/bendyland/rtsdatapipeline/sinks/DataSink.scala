@@ -42,6 +42,7 @@ object DataSink {
   }
 
   def writeParquetAndAwaitTermination(data: DataFrame, dataPath: String, checkpointPath: String) = {
+    println("Writing data...")
     data.writeStream
       .format("parquet")
       .option("path", dataPath)
@@ -50,8 +51,5 @@ object DataSink {
       .start()
       .awaitTermination()
   }
-
-  // TODO: Add similar methods for JSON, CSV, etc.
-  // def readJson(path: String)(implicit spark: SparkSession): DataFrame = ...
 }
 
