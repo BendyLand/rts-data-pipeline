@@ -1,2 +1,2 @@
 v1
-{"path":"file:///Users/benlandrette/ccode/serious-projects/data-engineering/01-rts-data-pipeline/rts_data_pipeline/data/parquet/enriched/part-00000-ca95898d-bff2-4b30-a842-38b4e2e1b3c2-c000.snappy.parquet","size":1822,"isDir":false,"modificationTime":1743563625323,"blockReplication":1,"blockSize":33554432,"action":"add"}
+{"path":"file:///Users/benlandrette/ccode/serious-projects/data-engineering/01-rts-data-pipeline/rts_data_pipeline/data/parquet/enriched/part-00000-78d4960e-5b3f-4d86-bfef-b051dcb6b6df-c000.snappy.parquet","size":33666,"isDir":false,"modificationTime":1743643199994,"blockReplication":1,"blockSize":33554432,"action":"add"}

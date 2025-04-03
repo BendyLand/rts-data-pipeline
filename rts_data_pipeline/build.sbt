@@ -21,15 +21,19 @@ lazy val root = (project in file(".")).settings(
   coverageHighlighting := true,
 
   libraryDependencies ++= Seq(
-    "org.apache.spark" %% "spark-streaming" % sparkVersion.value % "provided",
-    "org.apache.spark" %% "spark-sql" % "3.3.0" % "provided",
-    "org.apache.spark" %% "spark-sql-kafka-0-10" % "3.3.1",
+    "org.apache.spark" %% "spark-core" % sparkVersion.value,
+    "org.apache.spark" %% "spark-sql" % sparkVersion.value,
+    "org.apache.spark" %% "spark-streaming" % sparkVersion.value,
+    "org.apache.spark" %% "spark-sql-kafka-0-10" % sparkVersion.value,
+    "org.apache.spark" %% "spark-token-provider-kafka-0-10" % sparkVersion.value,
+    "org.apache.parquet" % "parquet-hadoop" % "1.12.3", // Add this
+    "org.apache.kafka" % "kafka-clients" % "2.8.0",
     "io.circe" %% "circe-core" % "0.14.1",
     "io.circe" %% "circe-parser" % "0.14.1",
     "io.circe" %% "circe-generic" % "0.14.1",
-    "org.scalatest" %% "scalatest" % "3.2.2" % "test",
-    "org.scalacheck" %% "scalacheck" % "1.15.2" % "test",
-    "com.holdenkarau" %% "spark-testing-base" % "3.3.0_1.3.0" % "test"
+    "org.scalatest" %% "scalatest" % "3.2.2" % Test,
+    "org.scalacheck" %% "scalacheck" % "1.15.2" % Test,
+    "com.holdenkarau" %% "spark-testing-base" % "3.3.0_1.3.0" % Test,
   ),
 
   addCompilerPlugin(

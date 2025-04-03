@@ -22,8 +22,13 @@ object SensorStreamJob {
     val enrichedDF = SensorDataTransformations.enrichSensorData(sensorDataDS)(spark)
     val finalDF = SensorDataTransformations.preJoinAndAggregate(enrichedDF)(spark)
 
-    DataSink.writeParquet(enrichedDF, "data/parquet/enriched", "checkpoints/enriched")
-    DataSink.writeParquetAndAwaitTermination(finalDF, "data/parquet/aggregated", "checkpoints/aggregated")
+    // Start both streaming queries
+    val enrichedQuery = DataSink.writeParquet(enrichedDF, "data/parquet/enriched", "checkpoints/enriched")
+    val aggregatedQuery = DataSink.writeParquet(finalDF, "data/parquet/aggregated", "checkpoints/aggregated")
+
+    // Block until manual termination (e.g., Ctrl+C)
+    enrichedQuery.awaitTermination()
+    aggregatedQuery.awaitTermination()
   }
 
   def show(spark: SparkSession): Unit = {

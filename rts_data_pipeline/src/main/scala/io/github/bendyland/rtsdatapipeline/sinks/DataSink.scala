@@ -23,6 +23,7 @@ object DataSink {
 
   // Reads a Parquet file from a given path
   def readParquet(path: String)(implicit spark: SparkSession): DataFrame = {
+    spark.conf.set("spark.sql.files.ignoreCorruptFiles", "true")
     spark.read.parquet(path)
   }
 
@@ -50,6 +51,14 @@ object DataSink {
       .outputMode("append")
       .start()
       .awaitTermination()
+  }
+
+  def combineParquets(inputPath: String, outputPath: String)(implicit spark: SparkSession): Unit = {
+    val df = spark.read.parquet(inputPath)
+    val compacted = df.repartition(1) 
+    compacted.write
+      .mode("overwrite") 
+      .parquet(outputPath)
   }
 }
 
