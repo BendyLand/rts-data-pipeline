@@ -20,9 +20,11 @@ echo "Data generator has stopped."
 
 cd ../rts_data_pipeline
 echo "Starting Spark job..."
-sbt run
+sbt run &
 SBT_PS=$!
-wait "$SBT_PS"
+sleep 30 
+echo "Stopping consumer..."
+kill -SIGINT "$SBT_PS"
 
 cd ..
 ./scripts/combine.sh

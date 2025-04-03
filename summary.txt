@@ -1,0 +1,152 @@
+- combine.sh
+#!/bin/bash
+
+echo "Combining files..."
+cd rts_data_pipeline
+sbt "runMain io.github.bendyland.rtsdatapipeline.Main combine"
+echo "Files combined successfully!"
+cd ..
+
+mv rts_data_pipeline/data/parquet/enriched_combined/part*.parquet rts_data_pipeline/data/parquet/enriched_combined/enriched_data.parquet 
+mv rts_data_pipeline/data/parquet/aggregated_combined/part*.parquet rts_data_pipeline/data/parquet/aggregated_combined/aggregated_data.parquet 
+
+echo "Files can be found at:"
+echo "rts_data_pipeline/data/parquet/enriched_combined/enriched_data.parquet"
+echo "and"
+echo "rts_data_pipeline/data/parquet/aggregated_combined/aggregated_data.parquet"
+
+- consumer.sh
+#!/bin/bash
+
+echo "Starting Kafka consumer for topic 'sensor-data'..."
+/opt/homebrew/opt/kafka/bin/kafka-console-consumer \
+  --bootstrap-server localhost:9092 \
+  --topic sensor-data \
+  --from-beginning > /tmp/kafka-consumer.log 2>&1 &
+CONSUMER_PID=$!
+echo $CONSUMER_PID > /tmp/kafka-consumer.pid
+echo "Kafka consumer started with PID $CONSUMER_PID"
+echo "Logs are being written to /tmp/kafka-consumer.log"
+
+- reset_topic.sh
+#!/bin/bash
+
+TOPIC="sensor-data"
+BROKER="localhost:9092"
+
+/opt/homebrew/bin/kafka-topics --bootstrap-server $BROKER --delete --topic $TOPIC
+
+# Wait for deletion to complete
+echo "Waiting for topic '$TOPIC' to be fully deleted..."
+while /opt/homebrew/bin/kafka-topics --bootstrap-server $BROKER --list | grep -q "^$TOPIC$"; do
+  echo -n "."
+  sleep 0.5
+done
+
+echo "Recreating topic '$TOPIC'..."
+/opt/homebrew/bin/kafka-topics --bootstrap-server $BROKER \
+  --create --topic $TOPIC --partitions 1 --replication-factor 1
+
+echo "Removing Spark checkpoints..."
+rm -rf /tmp/sensor-type-check
+rm -rf ./rts_data_pipeline/data/*
+rm -rf ./rts_data_pipeline/checkpoints/*
+
+echo "Clearing old consumer logs..."
+echo "" > /tmp/kafka-consumer.log
+
+echo "Done!"
+
+- start.sh
+#!/bin/bash
+
+echo "Starting ZooKeeper..."
+/opt/homebrew/bin/zookeeper-server-start /opt/homebrew/etc/kafka/zookeeper.properties > /tmp/zookeeper.log 2>&1 &
+ZK_PID=$!
+sleep 2
+
+if ps -p $ZK_PID > /dev/null; then
+  echo $ZK_PID > /tmp/zookeeper.pid
+  echo "ZooKeeper started with PID $ZK_PID"
+else
+  echo "ZooKeeper failed to start. Check /tmp/zookeeper.log"
+  exit 1
+fi
+
+echo "Starting Kafka..."
+rm -rf /tmp/kafka-logs  # optionally clear stale state
+/opt/homebrew/bin/kafka-server-start /opt/homebrew/etc/kafka/server.properties > /tmp/kafka.log 2>&1 &
+KAFKA_PID=$!
+
+# Wait and dump logs if it fails
+echo "Waiting for Kafka to start..."
+TIMEOUT=10
+STARTED=0
+for ((i=0; i<$TIMEOUT; i++)); do
+  echo -n "."
+  if grep -q "KafkaServer.*started" /tmp/kafka.log; then
+    STARTED=1
+    echo
+    break
+  fi
+  sleep 1
+done
+
+if [ "$STARTED" -eq 1 ]; then
+  echo $KAFKA_PID > /tmp/kafka.pid
+  echo "Kafka started with PID $KAFKA_PID"
+else
+  echo
+  echo "Kafka failed to start. Here's the last few log lines:"
+  tail -n 30 /tmp/kafka.log
+  kill $KAFKA_PID 2>/dev/null
+  exit 1
+fi
+
+- stop.sh
+#!/bin/bash
+
+# Function to stop a process by PID and wait
+stop_process() {
+  local pid_file=$1
+  local name=$2
+
+  if [ -f "$pid_file" ]; then
+    local pid
+    pid=$(cat "$pid_file")
+
+    if ps -p "$pid" > /dev/null; then
+      echo "Stopping $name (PID $pid)..."
+      kill "$pid"
+
+      # Wait up to 10 seconds for the process to terminate
+      for i in {1..10}; do
+        if ps -p "$pid" > /dev/null; then
+          sleep 1
+        else
+          echo "$name stopped gracefully."
+          break
+        fi
+      done
+
+      # If still running, force kill
+      if ps -p "$pid" > /dev/null; then
+        echo "$name did not stop in time. Forcing shutdown..."
+        kill -9 "$pid"
+        echo "$name force killed."
+      fi
+    else
+      echo "$name not running?"
+    fi
+
+    rm -f "$pid_file"
+  else
+    echo "$name PID file not found."
+  fi
+}
+
+stop_process /tmp/kafka.pid "Kafka"
+stop_process /tmp/zookeeper.pid "ZooKeeper"
+if [ -f "/tmp/kafka-consumer.pid" ]; then 
+  stop_process /tmp/kafka-consumer.pid "Consumer"
+fi
