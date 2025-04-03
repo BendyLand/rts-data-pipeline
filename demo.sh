@@ -1,8 +1,8 @@
 #!/bin/bash
 
-./stop.sh
-./start.sh
-./reset_topic.sh
+./scripts/stop.sh
+./scripts/start.sh
+./scripts/reset_topic.sh
 
 cd generator
 go build -o generator_bin
@@ -25,5 +25,5 @@ SBT_PS=$!
 wait "$SBT_PS"
 
 cd ..
-./combine.sh
+./scripts/combine.sh
 
