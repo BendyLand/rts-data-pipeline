@@ -15,7 +15,7 @@ object Main {
         DataSink.combineParquets("data/parquet/enriched", "data/parquet/enriched_combined")(spark)
         DataSink.combineParquets("data/parquet/aggregated", "data/parquet/aggregated_combined")(spark)
       case Some(invalid) =>
-        println(s"Unknown mode: '$invalid'. Supported: 'show'")
+        println(s"Unknown mode: '$invalid'. Supported: 'show', 'combine'")
         sys.exit(1)
       case None => SensorStreamJob.run(spark)
     }
