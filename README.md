@@ -126,8 +126,7 @@ What happens:
     - pbcopy a simple SELECT * … SQL for enriched vs aggregated
     - Launches DuckDB CLI in each directory
 
-⸻
-
+---
 ## Customization
  - Collection duration in demo.sh (currently 30 s + 10 s startup delay)
  - Kafka broker/port and topic name in reset_topic.sh & consumer.sh
