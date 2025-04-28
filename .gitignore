@@ -1,4 +1,5 @@
 rts_data_pipeline/checkpoints/*
 full_summary.txt
 summary.txt
+rts_data_pipeline/data/*
 
